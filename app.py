@@ -10,7 +10,7 @@ from datetime import datetime
 # Page configuration
 st.set_page_config(page_title="NCHS IT Ticket System", page_icon="🎫", layout="wide")
 
-# --- DATABASE INTEGRATION ---
+# --- DATABASE & SESSION CONFIGURATION ---
 DB_FILE = "tickets.json"
 SESSION_FILE = "user_session.json"
 SESSION_TIMEOUT_SECONDS = 600  # 10 minutes session inactivity timeout
@@ -240,6 +240,11 @@ def render_user_tickets():
             }
             user_df.rename(columns=rename_map, inplace=True)
 
+            # Essential user-facing columns only
+            display_cols = ["ID", "Date & Time", "Ticket Title", "Priority", "Status", "Action Flag"]
+            valid_cols = [col for col in display_cols if col in user_df.columns]
+            clean_user_df = user_df[valid_cols]
+
             def highlight_user_status(row):
                 status = row.get('Status', '')
                 if status == 'Pending':
@@ -250,7 +255,7 @@ def render_user_tickets():
                     return ['background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'] * len(row)
                 return [''] * len(row)
 
-            styled_user_df = user_df.style.apply(highlight_user_status, axis=1)
+            styled_user_df = clean_user_df.style.apply(highlight_user_status, axis=1)
 
             st.dataframe(
                 styled_user_df,
