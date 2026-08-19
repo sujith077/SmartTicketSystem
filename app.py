@@ -249,7 +249,7 @@ def render_admin_dashboard():
 @st.fragment(run_every="5s")
 def render_user_tickets():
     st.subheader("📋 My Support Tickets Registry (Last 3 Months)")
-    st.caption("🎨 **Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Completed")
+    st.caption("**Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Completed")
     
     db = filter_last_3_months(load_local_database())
     if len(db) > 0:
