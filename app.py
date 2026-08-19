@@ -465,7 +465,7 @@ else:
             st.info(f"**System Routing Action:** {res['routing']}")
             st.success("Ticket successfully logged!")
 
-    # TAB 2: AI CHATBOT INTERFACE
+    # TAB 2: AI CHATBOT INTERFACE (FIXED LAYOUT)
     with tab2:
         st.subheader("💬 AI Conversational Assistant")
         st.caption("🤖 Describe your issue naturally. The assistant will parse your query, run ML triage, and log your ticket directly.")
@@ -475,14 +475,14 @@ else:
                 {"role": "assistant", "content": "👋 Hi! Tell me about the IT issue you're experiencing. (e.g., *'My laptop cannot connect to the VPN in Colombo branch and I cannot work'*)"}
             ]
 
+        # 1. Render all current conversation messages
         for msg in st.session_state.chat_messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
+        # 2. Render input box always at the bottom
         if user_prompt := st.chat_input("Type your IT problem here..."):
             st.session_state.chat_messages.append({"role": "user", "content": user_prompt})
-            with st.chat_message("user"):
-                st.write(user_prompt)
 
             # Rule/Keyword Parsing from Chat Stream
             is_critical = "cannot work" in user_prompt.lower() or "urgent" in user_prompt.lower() or "down" in user_prompt.lower()
@@ -526,8 +526,9 @@ else:
 
             bot_reply = f"✅ **Ticket Logged Successfully!**\n\n- **Assigned Priority:** `{chat_pred}` (Confidence: {chat_conf}%)\n- **Business Critical:** `{business_critical}`\n\nYour ticket has been sent to the IT operations queue."
             st.session_state.chat_messages.append({"role": "assistant", "content": bot_reply})
-            with st.chat_message("assistant"):
-                st.write(bot_reply)
+            
+            # Rerun so new bot response displays in loop above the chat input
+            st.rerun()
 
     # TAB 3: USER TICKET REGISTRY VIEW
     with tab3:
