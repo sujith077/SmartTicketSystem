@@ -138,7 +138,8 @@ else:
         @st.cache_resource
         def load_pipeline():
             model_path = 'priority_pipeline.pkl'
-            if not os.path.exists(model_path):
+            
+            def train_and_save_pipeline():
                 from sklearn.model_selection import train_test_split
                 from sklearn.preprocessing import OneHotEncoder, StandardScaler
                 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -207,8 +208,16 @@ else:
                 ])
                 auto_pipeline.fit(X, y)
                 joblib.dump(auto_pipeline, model_path)
+                return auto_pipeline
 
-            return joblib.load(model_path)
+            # Try loading existing pickle; if missing or incompatible, train natively on server
+            if os.path.exists(model_path):
+                try:
+                    return joblib.load(model_path)
+                except Exception:
+                    return train_and_save_pipeline()
+            else:
+                return train_and_save_pipeline()
 
         pipeline = load_pipeline()
 
