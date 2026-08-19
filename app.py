@@ -6,7 +6,7 @@ import os
 import numpy as np
 from datetime import datetime
 
-# Use wide mode for a spacious, professional dashboard layout
+# Page configuration
 st.set_page_config(page_title="NCHS IT Ticket System", page_icon="🎫", layout="wide")
 
 # --- DATABASE INTEGRATION ---
@@ -80,97 +80,97 @@ if st.sidebar.button("🚪 Log Out", use_container_width=True):
 # --- ADMIN DASHBOARD ---
 if is_admin:
     st.title("👨‍💻 NCHS IT System Administrator Portal")
-    st.write("Manage active IT requests, review triage alerts, and track system analytics.")
+    st.write("Review active operations, manual triage alerts, and system status.")
     st.markdown("---")
     
     if len(st.session_state.ticket_database) > 0:
         admin_df = pd.DataFrame(st.session_state.ticket_database)
         
-        # Summary Metrics Row
-        st.subheader("📊 Key Metrics")
+        # Operational Metrics
+        st.subheader("📊 Operational Summary")
         kcol1, kcol2, kcol3, kcol4 = st.columns(4)
         with kcol1:
-            st.metric(label="Total Tickets Logged", value=len(admin_df))
+            st.metric(label="Total Tickets", value=len(admin_df))
         with kcol2:
             pending_count = len(admin_df[admin_df['Status'] == 'Pending'])
-            st.metric(label="⏳ Pending Action", value=pending_count)
+            st.metric(label="⏳ Pending Triage", value=pending_count)
         with kcol3:
             critical_count = len(admin_df[admin_df['Assigned_Priority'] == 'Critical'])
-            st.metric(label="🚨 Critical Escalations", value=critical_count)
+            st.metric(label="🚨 Critical Tickets", value=critical_count)
         with kcol4:
             triage_count = len(admin_df[admin_df['Routing_Status'].str.contains('Manual Triage', na=False)])
-            st.metric(label="⚠️ Manual Triage Flags", value=triage_count)
+            st.metric(label="⚠️ Triage Flags", value=triage_count)
             
         st.markdown("---")
         
-        # Visual Charts
-        st.subheader("📈 Queue Analytics")
-        chart_col1, chart_col2 = st.columns(2)
-        with chart_col1:
-            st.markdown("**Tickets by Priority**")
-            priority_counts = admin_df['Assigned_Priority'].value_counts()
-            order = ['Critical', 'High', 'Medium', 'Low']
-            priority_counts = priority_counts.reindex([p for p in order if p in priority_counts.index])
-            st.bar_chart(priority_counts)
-        with chart_col2:
-            st.markdown("**Tickets by Branch Location**")
-            branch_counts = admin_df['Branch_Location'].value_counts()
-            st.bar_chart(branch_counts)
-            
-        st.markdown("---")
+        # Action Console to Update Status & Priority cleanly
+        st.subheader("⚙️ Quick Action Console")
+        st.caption("Select a ticket below to update its Status or override its Assigned Priority.")
         
-        # Interactive Table for Triage and Status Updates
-        st.subheader("📋 Active Operations & Triage Queue")
-        st.caption("💡 Admins can update ticket **Status** and override **Assigned Priority** directly in the table below.")
+        admin_df['ID'] = admin_df.index
         
-        # Reorder columns for optimal viewing
-        column_order = [
-            "Timestamp", "Title", "Assigned_Priority", "Status", "Routing_Status", 
-            "Confidence", "User_Email", "Branch_Location", "Department", "Issue_Category", 
-            "Device_Type", "Affected_Users", "Business_Critical", "Description"
-        ]
+        c1, c2, c3, c4 = st.columns([1, 2, 2, 1])
+        with c1:
+            selected_id = st.selectbox("Ticket ID", options=admin_df['ID'].tolist())
         
-        # Ensure all columns exist
-        available_cols = [col for col in column_order if col in admin_df.columns]
-        admin_df = admin_df[available_cols]
+        target_ticket = admin_df[admin_df['ID'] == selected_id].iloc[0]
+        
+        with c2:
+            new_status = st.selectbox(
+                "Update Status", 
+                options=["Pending", "Processing", "Completed"],
+                index=["Pending", "Processing", "Completed"].index(target_ticket['Status'])
+            )
+        with c3:
+            new_priority = st.selectbox(
+                "Override Priority", 
+                options=["Critical", "High", "Medium", "Low"],
+                index=["Critical", "High", "Medium", "Low"].index(target_ticket['Assigned_Priority'])
+            )
+        with c4:
+            st.write(" ")
+            st.write(" ")
+            if st.button("💾 Save Update", use_container_width=True):
+                st.session_state.ticket_database[selected_id]['Status'] = new_status
+                st.session_state.ticket_database[selected_id]['Assigned_Priority'] = new_priority
+                save_to_local_database(st.session_state.ticket_database)
+                st.toast(f"Ticket #{selected_id} updated successfully!", icon="✅")
+                st.rerun()
 
-        edited_df = st.data_editor(
-            admin_df,
-            column_config={
-                "Timestamp": st.column_config.TextColumn("Date & Time", disabled=True, width="medium"),
-                "Title": st.column_config.TextColumn("Ticket Title", disabled=True, width="large"),
-                "Assigned_Priority": st.column_config.SelectboxColumn(
-                    "Priority",
-                    options=["Critical", "High", "Medium", "Low"],
-                    required=True,
-                    width="small"
-                ),
-                "Status": st.column_config.SelectboxColumn(
-                    "Status",
-                    options=["Pending", "Processing", "Completed"],
-                    required=True,
-                    width="small"
-                ),
-                "Routing_Status": st.column_config.TextColumn("Routing Action", disabled=True, width="medium"),
-                "Confidence": st.column_config.TextColumn("ML Conf.", disabled=True, width="small"),
-                "User_Email": st.column_config.TextColumn("User", disabled=True, width="medium"),
-                "Branch_Location": st.column_config.TextColumn("Branch", disabled=True, width="small"),
-                "Department": st.column_config.TextColumn("Dept", disabled=True, width="small"),
-                "Issue_Category": st.column_config.TextColumn("Category", disabled=True, width="small"),
-                "Device_Type": st.column_config.TextColumn("Device", disabled=True, width="small"),
-                "Affected_Users": st.column_config.NumberColumn("Users", disabled=True, width="small"),
-                "Business_Critical": st.column_config.TextColumn("Critical Work", disabled=True, width="small"),
-                "Description": st.column_config.TextColumn("Description", disabled=True, width="large")
-            },
-            hide_index=True,
-            use_container_width=True
+        st.markdown("---")
+        st.subheader("📋 Active Operations Queue")
+        st.caption("🎨 **Color Key:** 🟡 Yellow = Pending | 🔵 Blue = Processing | 🟢 Green = Completed")
+
+        # Select essential columns only
+        display_cols = ["ID", "Timestamp", "Title", "Assigned_Priority", "Status", "Routing_Status", "User_Email"]
+        clean_df = admin_df[display_cols].copy()
+        clean_df.rename(columns={
+            "Timestamp": "Date & Time",
+            "Title": "Ticket Title",
+            "Assigned_Priority": "Priority",
+            "Routing_Status": "Action Flag",
+            "User_Email": "User"
+        }, inplace=True)
+
+        # Full-row status highlighting function
+        def highlight_status(row):
+            status = row['Status']
+            if status == 'Pending':
+                return ['background-color: #fff9c4; color: #574500; font-weight: 500;'] * len(row)  # Soft Yellow
+            elif status == 'Processing':
+                return ['background-color: #e3f2fd; color: #0d47a1; font-weight: 500;'] * len(row)  # Soft Blue
+            elif status == 'Completed':
+                return ['background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'] * len(row)  # Soft Green
+            return [''] * len(row)
+
+        styled_df = clean_df.style.apply(highlight_status, axis=1)
+
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            hide_index=True
         )
-        
-        if not edited_df.equals(admin_df):
-            st.session_state.ticket_database = edited_df.to_dict('records')
-            save_to_local_database(st.session_state.ticket_database)
-            st.toast("System updated successfully!", icon="💾")
-            st.rerun()
+
     else:
         st.info("No tickets have been submitted yet.")
 
