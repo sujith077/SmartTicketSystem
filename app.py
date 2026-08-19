@@ -25,9 +25,6 @@ def save_to_local_database(data):
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-if 'ticket_database' not in st.session_state:
-    st.session_state.ticket_database = load_local_database()
-
 if 'form_generation_id' not in st.session_state:
     st.session_state.form_generation_id = 0
 
@@ -77,14 +74,19 @@ if st.sidebar.button("🚪 Log Out", use_container_width=True):
     st.session_state.user_role = None
     st.rerun()
 
-# --- ADMIN DASHBOARD ---
-if is_admin:
+# --- AUTO-REFRESHING ADMIN DASHBOARD ---
+@st.fragment(run_every="5s")  # Auto-refreshes this section every 5 seconds automatically
+def render_admin_dashboard():
+    # Reload database from disk on each 5-second interval
+    ticket_database = load_local_database()
+    st.session_state.ticket_database = ticket_database
+
     st.title("👨‍💻 NCHS IT System Administrator Portal")
-    st.write("Review active operations, manual triage alerts, and system status.")
+    st.caption("🔄 **Live Feed:** Dashboard automatically synchronizes new tickets every 5 seconds.")
     st.markdown("---")
     
-    if len(st.session_state.ticket_database) > 0:
-        admin_df = pd.DataFrame(st.session_state.ticket_database)
+    if len(ticket_database) > 0:
+        admin_df = pd.DataFrame(ticket_database)
         
         # Operational Metrics
         st.subheader("📊 Operational Summary")
@@ -103,7 +105,7 @@ if is_admin:
             
         st.markdown("---")
         
-        # Action Console to Update Status & Priority cleanly
+        # Quick Action Console
         st.subheader("⚙️ Quick Action Console")
         st.caption("Select a ticket below to update its Status or override its Assigned Priority.")
         
@@ -141,7 +143,6 @@ if is_admin:
         st.subheader("📋 Active Operations Queue")
         st.caption("🎨 **Color Key:** 🟡 Yellow = Pending | 🔵 Blue = Processing | 🟢 Green = Completed")
 
-        # Select essential columns only
         display_cols = ["ID", "Timestamp", "Title", "Assigned_Priority", "Status", "Routing_Status", "User_Email"]
         clean_df = admin_df[display_cols].copy()
         clean_df.rename(columns={
@@ -152,15 +153,14 @@ if is_admin:
             "User_Email": "User"
         }, inplace=True)
 
-        # Full-row status highlighting function
         def highlight_status(row):
             status = row['Status']
             if status == 'Pending':
-                return ['background-color: #fff9c4; color: #574500; font-weight: 500;'] * len(row)  # Soft Yellow
+                return ['background-color: #fff9c4; color: #574500; font-weight: 500;'] * len(row)
             elif status == 'Processing':
-                return ['background-color: #e3f2fd; color: #0d47a1; font-weight: 500;'] * len(row)  # Soft Blue
+                return ['background-color: #e3f2fd; color: #0d47a1; font-weight: 500;'] * len(row)
             elif status == 'Completed':
-                return ['background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'] * len(row)  # Soft Green
+                return ['background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'] * len(row)
             return [''] * len(row)
 
         styled_df = clean_df.style.apply(highlight_status, axis=1)
@@ -172,7 +172,10 @@ if is_admin:
         )
 
     else:
-        st.info("No tickets have been submitted yet.")
+        st.info("No tickets have been submitted yet. Awaiting live incoming submissions...")
+
+if is_admin:
+    render_admin_dashboard()
 
 # --- USER PANEL ---
 else:
@@ -335,14 +338,17 @@ else:
                     "Status": "Pending"
                 }
 
-                st.session_state.ticket_database.append(new_ticket_entry)
-                save_to_local_database(st.session_state.ticket_database)
+                # Load latest tickets directly to avoid race conditions
+                current_tickets = load_local_database()
+                current_tickets.append(new_ticket_entry)
+                save_to_local_database(current_tickets)
                 st.success("Ticket successfully logged!")
 
     with tab2:
         st.subheader("📋 My Support Tickets Registry")
-        if len(st.session_state.ticket_database) > 0:
-            full_df = pd.DataFrame(st.session_state.ticket_database)
+        db = load_local_database()
+        if len(db) > 0:
+            full_df = pd.DataFrame(db)
             user_df = full_df[full_df['User_Email'] == user_email]
             if not user_df.empty:
                 st.dataframe(user_df, use_container_width=True, hide_index=True)
