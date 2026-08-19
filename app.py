@@ -148,7 +148,7 @@ else:
                 from sklearn.ensemble import RandomForestClassifier
 
                 np.random.seed(42)
-                departments = ['HR', 'Finance', 'IT', 'Sales', 'Marketing', 'Operations']
+                departments = ['Academic', 'HR', 'Finance', 'IT', 'Sales', 'Marketing', 'Operations']
                 categories = ['Software', 'Hardware', 'Network', 'Access/Login', 'Security']
                 devices = ['Laptop', 'Desktop', 'Mobile', 'Printer', 'Server', 'None']
                 locations = ['Kandy', 'Colombo']
@@ -227,7 +227,7 @@ else:
             
             col1, col2 = st.columns(2)
             with col1:
-                department = st.selectbox("Originating Department", ['HR', 'Finance', 'IT', 'Sales', 'Marketing', 'Operations'], index=None)
+                department = st.selectbox("Originating Department", ['Academic', 'HR', 'Finance', 'IT', 'Sales', 'Marketing', 'Operations'], index=None)
                 category = st.selectbox("Functional Issue Category", ['Software', 'Hardware', 'Network', 'Access/Login', 'Security'], index=None)
                 device = st.selectbox("Primary Device Classification", ['Laptop', 'Desktop', 'Mobile', 'Printer', 'Server', 'None'], index=None)
             with col2:
