@@ -109,7 +109,7 @@ def render_admin_dashboard():
         st.subheader("⚙️ Quick Action Console")
         st.caption("Select a ticket below to update its Status or override its Assigned Priority.")
         
-        admin_df['ID'] = admin_df.index
+        admin_df['ID'] = [f"TICK-{i+1:03d}" for i in admin_df.index]
         
         c1, c2, c3, c4 = st.columns([1, 2, 2, 1])
         with c1:
