@@ -64,7 +64,6 @@ def filter_last_3_months(tickets_list):
             if ticket_time >= cutoff_date:
                 filtered.append(ticket)
         except (KeyError, ValueError):
-            # Include ticket if date format is invalid or unparseable to prevent accidental loss
             filtered.append(ticket)
     return filtered
 
@@ -126,6 +125,27 @@ if st.sidebar.button("🚪 Log Out", use_container_width=True):
     clear_session()
     st.rerun()
 
+# --- STYLING HELPERS ---
+def style_priority(val):
+    if val == 'Critical':
+        return 'background-color: #ffebee; color: #c62828; font-weight: bold;'
+    elif val == 'High':
+        return 'background-color: #fff3e0; color: #e65100; font-weight: bold;'
+    elif val == 'Medium':
+        return 'background-color: #e8f5e9; color: #2e7d32; font-weight: bold;'
+    elif val == 'Low':
+        return 'background-color: #f3e5f5; color: #6a1b9a; font-weight: bold;'
+    return ''
+
+def style_status(val):
+    if val == 'Pending':
+        return 'background-color: #fff9c4; color: #574500; font-weight: 500;'
+    elif val == 'Processing':
+        return 'background-color: #e3f2fd; color: #0d47a1; font-weight: 500;'
+    elif val == 'Completed':
+        return 'background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'
+    return ''
+
 # --- AUTO-REFRESHING ADMIN DASHBOARD ---
 @st.fragment(run_every="5s")
 def render_admin_dashboard():
@@ -186,7 +206,6 @@ def render_admin_dashboard():
             st.write(" ")
             st.write(" ")
             if st.button("💾 Save Update", use_container_width=True):
-                # Update status in original full database array matching unique timestamp and email
                 for ticket in full_database:
                     if (ticket.get("Timestamp") == target_ticket.get("Timestamp") and 
                         ticket.get("User_Email") == target_ticket.get("User_Email")):
@@ -199,7 +218,7 @@ def render_admin_dashboard():
 
         st.markdown("---")
         st.subheader("📋 Active Operations Queue")
-        st.caption("🎨 **Color Key:** 🟡 Yellow = Pending | 🔵 Blue = Processing | 🟢 Green = Completed")
+        st.caption("🎨 **Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Completed")
 
         clean_df = admin_df.copy()
         clean_df.rename(columns={
@@ -214,17 +233,8 @@ def render_admin_dashboard():
         display_cols = ["ID", "Date & Time", "Ticket Title", "Priority", "Status", "Action Flag", "User"]
         clean_df = clean_df[display_cols]
 
-        def highlight_status(row):
-            status = row['Status']
-            if status == 'Pending':
-                return ['background-color: #fff9c4; color: #574500; font-weight: 500;'] * len(row)
-            elif status == 'Processing':
-                return ['background-color: #e3f2fd; color: #0d47a1; font-weight: 500;'] * len(row)
-            elif status == 'Completed':
-                return ['background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'] * len(row)
-            return [''] * len(row)
-
-        styled_df = clean_df.style.apply(highlight_status, axis=1)
+        styled_df = clean_df.style.map(style_priority, subset=['Priority'])\
+                                 .map(style_status, subset=['Status'])
 
         st.dataframe(
             styled_df,
@@ -239,7 +249,7 @@ def render_admin_dashboard():
 @st.fragment(run_every="5s")
 def render_user_tickets():
     st.subheader("📋 My Support Tickets Registry (Last 3 Months)")
-    st.caption("🎨 **Color Key:** 🟡 Yellow = Pending | 🔵 Blue = Processing | 🟢 Green = Completed | 🔄 Live Sync Every 5s")
+    st.caption("🎨 **Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Completed")
     
     db = filter_last_3_months(load_local_database())
     if len(db) > 0:
@@ -261,17 +271,8 @@ def render_user_tickets():
             valid_cols = [col for col in display_cols if col in user_df.columns]
             clean_user_df = user_df[valid_cols]
 
-            def highlight_user_status(row):
-                status = row.get('Status', '')
-                if status == 'Pending':
-                    return ['background-color: #fff9c4; color: #574500; font-weight: 500;'] * len(row)
-                elif status == 'Processing':
-                    return ['background-color: #e3f2fd; color: #0d47a1; font-weight: 500;'] * len(row)
-                elif status == 'Completed':
-                    return ['background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'] * len(row)
-                return [''] * len(row)
-
-            styled_user_df = clean_user_df.style.apply(highlight_user_status, axis=1)
+            styled_user_df = clean_user_df.style.map(style_priority, subset=['Priority'])\
+                                               .map(style_status, subset=['Status'])
 
             st.dataframe(
                 styled_user_df,
@@ -448,18 +449,15 @@ else:
                 current_tickets.append(new_ticket_entry)
                 save_to_local_database(current_tickets)
 
-                # Persist prediction details across reruns
                 st.session_state.last_prediction = {
                     "priority": prediction,
                     "confidence": confidence,
                     "routing": routing_status
                 }
 
-                # Reset form inputs for next ticket
                 st.session_state.form_generation_id += 1
                 st.rerun()
 
-        # Display result card after refresh
         if 'last_prediction' in st.session_state:
             res = st.session_state.last_prediction
             st.markdown(f"### Predicted Priority: **{res['priority']}** *(Confidence: {res['confidence']}%)*")
