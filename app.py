@@ -3,6 +3,7 @@ import pandas as pd
 import joblib
 import json
 import os
+import time
 import numpy as np
 from datetime import datetime
 
@@ -11,6 +12,8 @@ st.set_page_config(page_title="NCHS IT Ticket System", page_icon="🎫", layout=
 
 # --- DATABASE INTEGRATION ---
 DB_FILE = "tickets.json"
+SESSION_FILE = "user_session.json"
+SESSION_TIMEOUT_SECONDS = 600  # 10 minutes session inactivity timeout
 
 def load_local_database():
     if os.path.exists(DB_FILE):
@@ -25,6 +28,33 @@ def save_to_local_database(data):
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+def load_session():
+    if os.path.exists(SESSION_FILE):
+        try:
+            with open(SESSION_FILE, "r") as f:
+                data = json.load(f)
+                # Check if session is still within the 10-minute window
+                if time.time() - data.get("last_active", 0) < SESSION_TIMEOUT_SECONDS:
+                    return data.get("user"), data.get("role")
+        except:
+            return None, None
+    return None, None
+
+def save_session(user, role):
+    with open(SESSION_FILE, "w") as f:
+        json.dump({
+            "user": user,
+            "role": role,
+            "last_active": time.time()
+        }, f)
+
+def clear_session():
+    if os.path.exists(SESSION_FILE):
+        try:
+            os.remove(SESSION_FILE)
+        except:
+            pass
+
 if 'form_generation_id' not in st.session_state:
     st.session_state.form_generation_id = 0
 
@@ -34,10 +64,17 @@ AUTHORIZED_USERS = {
     "ayesha.k@nchs.edu.lk": "user@456"
 }
 
+# --- INITIALIZE SESSION FROM STORAGE ---
+saved_user, saved_role = load_session()
+
 if 'logged_in_user' not in st.session_state:
-    st.session_state.logged_in_user = None
+    st.session_state.logged_in_user = saved_user
 if 'user_role' not in st.session_state:
-    st.session_state.user_role = None
+    st.session_state.user_role = saved_role
+
+# Refresh activity timestamp if user is logged in
+if st.session_state.logged_in_user:
+    save_session(st.session_state.logged_in_user, st.session_state.user_role)
 
 # --- LOGIN GATEWAY ---
 if st.session_state.logged_in_user is None:
@@ -54,8 +91,10 @@ if st.session_state.logged_in_user is None:
             if login_submit:
                 clean_user = username_input.strip().lower()
                 if clean_user in AUTHORIZED_USERS and AUTHORIZED_USERS[clean_user] == password_input:
+                    role = "Admin" if clean_user == "itsupport@nchs.edu.lk" else "User"
                     st.session_state.logged_in_user = clean_user
-                    st.session_state.user_role = "Admin" if clean_user == "itsupport@nchs.edu.lk" else "User"
+                    st.session_state.user_role = role
+                    save_session(clean_user, role)
                     st.rerun()
                 else:
                     st.error("❌ Access Denied: Invalid username or incorrect password.")
@@ -72,6 +111,7 @@ st.sidebar.markdown("---")
 if st.sidebar.button("🚪 Log Out", use_container_width=True):
     st.session_state.logged_in_user = None
     st.session_state.user_role = None
+    clear_session()
     st.rerun()
 
 # --- AUTO-REFRESHING ADMIN DASHBOARD ---
@@ -177,6 +217,50 @@ def render_admin_dashboard():
 
     else:
         st.info("No tickets have been submitted yet. Awaiting live incoming submissions...")
+
+# --- AUTO-REFRESHING USER TICKET REGISTRY ---
+@st.fragment(run_every="5s")
+def render_user_tickets():
+    st.subheader("📋 My Support Tickets Registry")
+    st.caption("🎨 **Color Key:** 🟡 Yellow = Pending | 🔵 Blue = Processing | 🟢 Green = Completed | 🔄 Live Sync Every 5s")
+    
+    db = load_local_database()
+    if len(db) > 0:
+        full_df = pd.DataFrame(db)
+        user_df = full_df[full_df['User_Email'] == user_email].copy()
+        
+        if not user_df.empty:
+            user_df['ID'] = [i + 1 for i in range(len(user_df))]
+            
+            rename_map = {
+                "Timestamp": "Date & Time",
+                "Title": "Ticket Title",
+                "Assigned_Priority": "Priority",
+                "Routing_Status": "Action Flag"
+            }
+            user_df.rename(columns=rename_map, inplace=True)
+
+            def highlight_user_status(row):
+                status = row.get('Status', '')
+                if status == 'Pending':
+                    return ['background-color: #fff9c4; color: #574500; font-weight: 500;'] * len(row)
+                elif status == 'Processing':
+                    return ['background-color: #e3f2fd; color: #0d47a1; font-weight: 500;'] * len(row)
+                elif status == 'Completed':
+                    return ['background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'] * len(row)
+                return [''] * len(row)
+
+            styled_user_df = user_df.style.apply(highlight_user_status, axis=1)
+
+            st.dataframe(
+                styled_user_df,
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No tickets logged yet.")
+    else:
+        st.info("No tickets logged yet.")
 
 if is_admin:
     render_admin_dashboard()
@@ -348,43 +432,4 @@ else:
                 st.success("Ticket successfully logged!")
 
     with tab2:
-        st.subheader("📋 My Support Tickets Registry")
-        st.caption("🎨 **Color Key:** 🟡 Yellow = Pending | 🔵 Blue = Processing | 🟢 Green = Completed")
-        
-        db = load_local_database()
-        if len(db) > 0:
-            full_df = pd.DataFrame(db)
-            user_df = full_df[full_df['User_Email'] == user_email].copy()
-            
-            if not user_df.empty:
-                user_df['ID'] = [i + 1 for i in range(len(user_df))]
-                
-                rename_map = {
-                    "Timestamp": "Date & Time",
-                    "Title": "Ticket Title",
-                    "Assigned_Priority": "Priority",
-                    "Routing_Status": "Action Flag"
-                }
-                user_df.rename(columns=rename_map, inplace=True)
-
-                def highlight_user_status(row):
-                    status = row.get('Status', '')
-                    if status == 'Pending':
-                        return ['background-color: #fff9c4; color: #574500; font-weight: 500;'] * len(row)
-                    elif status == 'Processing':
-                        return ['background-color: #e3f2fd; color: #0d47a1; font-weight: 500;'] * len(row)
-                    elif status == 'Completed':
-                        return ['background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'] * len(row)
-                    return [''] * len(row)
-
-                styled_user_df = user_df.style.apply(highlight_user_status, axis=1)
-
-                st.dataframe(
-                    styled_user_df,
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info("No tickets logged yet.")
-        else:
-            st.info("No tickets logged yet.")
+        render_user_tickets()
