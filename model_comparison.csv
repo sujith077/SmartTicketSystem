@@ -1,0 +1,4 @@
+Model,Accuracy,Weighted F1-Score
+Logistic Regression,0.566,0.567858848761349
+Decision Tree,0.634,0.6338210893976394
+Random Forest,0.694,0.6922390985347253
