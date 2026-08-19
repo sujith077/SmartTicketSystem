@@ -146,6 +146,91 @@ def style_status(val):
         return 'background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'
     return ''
 
+# --- LOAD ML PIPELINE ---
+@st.cache_resource
+def load_pipeline():
+    model_path = 'priority_pipeline.pkl'
+    
+    def train_and_save_pipeline():
+        from sklearn.preprocessing import OneHotEncoder, StandardScaler
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.compose import ColumnTransformer
+        from sklearn.pipeline import Pipeline
+        from sklearn.ensemble import RandomForestClassifier
+
+        np.random.seed(42)
+        departments = ['Academic', 'HR', 'Finance', 'IT', 'Sales', 'Marketing', 'Operations']
+        categories = ['Software', 'Hardware', 'Network', 'Access/Login', 'Security']
+        devices = ['Laptop', 'Desktop', 'Mobile', 'Printer', 'Server', 'None']
+        locations = ['Kandy', 'Colombo']
+        sample_titles = {
+            'Security': ['Server firewall failure', 'Phishing email reported', 'Unauthorized access attempt'],
+            'Network': ['VPN connection dropping', 'Wi-Fi slow in Colombo branch', 'Switch port down'],
+            'Software': ['ERP application crash', 'Excel formula error', 'Software license expired'],
+            'Hardware': ['Monitor flickering', 'Printer jam in accounting', 'Laptop battery dying'],
+            'Access/Login': ['Password reset required', 'Account locked out', 'MFA token not received']
+        }
+        data = []
+        for _ in range(2500):
+            cat = np.random.choice(categories)
+            title = np.random.choice(sample_titles[cat])
+            dept = np.random.choice(departments)
+            dev = np.random.choice(devices)
+            loc = np.random.choice(locations)
+            users = np.random.randint(1, 50)
+            crit = np.random.choice(['Yes', 'No'], p=[0.2, 0.8])
+            desc = f"{title} reported in {dept} department at {loc} office affecting {users} users."
+            data.append({
+                'Ticket_Title': title, 'Ticket_Description': desc, 'Department': dept,
+                'Issue_Category': cat, 'Device_Type': dev, 'Affected_Users': users,
+                'Business_Critical': crit, 'Office_Location': loc
+            })
+        df = pd.DataFrame(data)
+        def assign_priority(row):
+            if row['Issue_Category'] == 'Security' and row['Device_Type'] == 'Server':
+                return 'Critical' if (row['Affected_Users'] > 10 or row['Business_Critical'] == 'Yes') else 'High'
+            score = 0
+            if row['Business_Critical'] == 'Yes': score += 4
+            if row['Affected_Users'] > 20: score += 3
+            elif row['Affected_Users'] > 5: score += 1
+            if row['Issue_Category'] in ['Network', 'Security']: score += 2
+            score += np.random.randint(-1, 2)
+            if score >= 6: return 'Critical'
+            elif score >= 4: return 'High'
+            elif score >= 2: return 'Medium'
+            else: return 'Low'
+        df['Priority'] = df.apply(assign_priority, axis=1)
+        df['Impact_Score'] = df['Affected_Users'] * df['Business_Critical'].map({'Yes': 1.5, 'No': 0.5})
+
+        categorical_cols = ['Department', 'Issue_Category', 'Device_Type', 'Business_Critical', 'Office_Location']
+        numerical_cols = ['Affected_Users', 'Impact_Score']
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('text', TfidfVectorizer(max_features=50, stop_words='english'), 'Ticket_Description'),
+                ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_cols),
+                ('num', StandardScaler(), numerical_cols)
+            ]
+        )
+        X = df[['Ticket_Description', 'Department', 'Issue_Category', 'Device_Type', 'Business_Critical', 'Office_Location', 'Affected_Users', 'Impact_Score']]
+        y = df['Priority']
+        auto_pipeline = Pipeline([
+            ('preprocessor', preprocessor),
+            ('classifier', RandomForestClassifier(n_estimators=200, max_depth=10, class_weight='balanced', random_state=42))
+        ])
+        auto_pipeline.fit(X, y)
+        joblib.dump(auto_pipeline, model_path)
+        return auto_pipeline
+
+    if os.path.exists(model_path):
+        try:
+            return joblib.load(model_path)
+        except Exception:
+            return train_and_save_pipeline()
+    else:
+        return train_and_save_pipeline()
+
+pipeline = load_pipeline()
+
 # --- AUTO-REFRESHING ADMIN DASHBOARD ---
 @st.fragment(run_every="5s")
 def render_admin_dashboard():
@@ -218,7 +303,7 @@ def render_admin_dashboard():
 
         st.markdown("---")
         st.subheader("📋 Active Operations Queue")
-        st.caption("**Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Completed")
+        st.caption("🎨 **Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Green = Completed")
 
         clean_df = admin_df.copy()
         clean_df.rename(columns={
@@ -249,7 +334,7 @@ def render_admin_dashboard():
 @st.fragment(run_every="5s")
 def render_user_tickets():
     st.subheader("📋 My Support Tickets Registry (Last 3 Months)")
-    st.caption("**Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Completed")
+    st.caption("🎨 **Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Completed")
     
     db = filter_last_3_months(load_local_database())
     if len(db) > 0:
@@ -293,95 +378,11 @@ else:
     with col1:
         st.title("🎫 NCHS IT Support Ticket Portal")
     
-    tab1, tab2 = st.tabs(["🆕 Raise New IT Ticket", "📋 View My Submitted Tickets"])
+    tab1, tab2, tab3 = st.tabs(["🆕 Raise New IT Ticket", "💬 AI Support Chat", "📋 View My Submitted Tickets"])
     
+    # TAB 1: FORM SUBMISSION
     with tab1:
         st.write("Submit your technical issue below with a detailed description for automated classification.")
-        
-        @st.cache_resource
-        def load_pipeline():
-            model_path = 'priority_pipeline.pkl'
-            
-            def train_and_save_pipeline():
-                from sklearn.model_selection import train_test_split
-                from sklearn.preprocessing import OneHotEncoder, StandardScaler
-                from sklearn.feature_extraction.text import TfidfVectorizer
-                from sklearn.compose import ColumnTransformer
-                from sklearn.pipeline import Pipeline
-                from sklearn.ensemble import RandomForestClassifier
-
-                np.random.seed(42)
-                departments = ['Academic', 'HR', 'Finance', 'IT', 'Sales', 'Marketing', 'Operations']
-                categories = ['Software', 'Hardware', 'Network', 'Access/Login', 'Security']
-                devices = ['Laptop', 'Desktop', 'Mobile', 'Printer', 'Server', 'None']
-                locations = ['Kandy', 'Colombo']
-                sample_titles = {
-                    'Security': ['Server firewall failure', 'Phishing email reported', 'Unauthorized access attempt'],
-                    'Network': ['VPN connection dropping', 'Wi-Fi slow in Colombo branch', 'Switch port down'],
-                    'Software': ['ERP application crash', 'Excel formula error', 'Software license expired'],
-                    'Hardware': ['Monitor flickering', 'Printer jam in accounting', 'Laptop battery dying'],
-                    'Access/Login': ['Password reset required', 'Account locked out', 'MFA token not received']
-                }
-                data = []
-                for _ in range(2500):
-                    cat = np.random.choice(categories)
-                    title = np.random.choice(sample_titles[cat])
-                    dept = np.random.choice(departments)
-                    dev = np.random.choice(devices)
-                    loc = np.random.choice(locations)
-                    users = np.random.randint(1, 50)
-                    crit = np.random.choice(['Yes', 'No'], p=[0.2, 0.8])
-                    desc = f"{title} reported in {dept} department at {loc} office affecting {users} users."
-                    data.append({
-                        'Ticket_Title': title, 'Ticket_Description': desc, 'Department': dept,
-                        'Issue_Category': cat, 'Device_Type': dev, 'Affected_Users': users,
-                        'Business_Critical': crit, 'Office_Location': loc
-                    })
-                df = pd.DataFrame(data)
-                def assign_priority(row):
-                    if row['Issue_Category'] == 'Security' and row['Device_Type'] == 'Server':
-                        return 'Critical' if (row['Affected_Users'] > 10 or row['Business_Critical'] == 'Yes') else 'High'
-                    score = 0
-                    if row['Business_Critical'] == 'Yes': score += 4
-                    if row['Affected_Users'] > 20: score += 3
-                    elif row['Affected_Users'] > 5: score += 1
-                    if row['Issue_Category'] in ['Network', 'Security']: score += 2
-                    score += np.random.randint(-1, 2)
-                    if score >= 6: return 'Critical'
-                    elif score >= 4: return 'High'
-                    elif score >= 2: return 'Medium'
-                    else: return 'Low'
-                df['Priority'] = df.apply(assign_priority, axis=1)
-                df['Impact_Score'] = df['Affected_Users'] * df['Business_Critical'].map({'Yes': 1.5, 'No': 0.5})
-
-                categorical_cols = ['Department', 'Issue_Category', 'Device_Type', 'Business_Critical', 'Office_Location']
-                numerical_cols = ['Affected_Users', 'Impact_Score']
-                preprocessor = ColumnTransformer(
-                    transformers=[
-                        ('text', TfidfVectorizer(max_features=50, stop_words='english'), 'Ticket_Description'),
-                        ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_cols),
-                        ('num', StandardScaler(), numerical_cols)
-                    ]
-                )
-                X = df[['Ticket_Description', 'Department', 'Issue_Category', 'Device_Type', 'Business_Critical', 'Office_Location', 'Affected_Users', 'Impact_Score']]
-                y = df['Priority']
-                auto_pipeline = Pipeline([
-                    ('preprocessor', preprocessor),
-                    ('classifier', RandomForestClassifier(n_estimators=200, max_depth=10, class_weight='balanced', random_state=42))
-                ])
-                auto_pipeline.fit(X, y)
-                joblib.dump(auto_pipeline, model_path)
-                return auto_pipeline
-
-            if os.path.exists(model_path):
-                try:
-                    return joblib.load(model_path)
-                except Exception:
-                    return train_and_save_pipeline()
-            else:
-                return train_and_save_pipeline()
-
-        pipeline = load_pipeline()
 
         with st.form(key=f"prediction_form_{st.session_state.form_generation_id}"):
             ticket_title = st.text_input("Ticket Title / Summary", placeholder="e.g., Unable to access examination portal")
@@ -464,5 +465,70 @@ else:
             st.info(f"**System Routing Action:** {res['routing']}")
             st.success("Ticket successfully logged!")
 
+    # TAB 2: AI CHATBOT INTERFACE
     with tab2:
+        st.subheader("💬 AI Conversational Assistant")
+        st.caption("🤖 Describe your issue naturally. The assistant will parse your query, run ML triage, and log your ticket directly.")
+        
+        if "chat_messages" not in st.session_state:
+            st.session_state.chat_messages = [
+                {"role": "assistant", "content": "👋 Hi! Tell me about the IT issue you're experiencing. (e.g., *'My laptop cannot connect to the VPN in Colombo branch and I cannot work'*)"}
+            ]
+
+        for msg in st.session_state.chat_messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+
+        if user_prompt := st.chat_input("Type your IT problem here..."):
+            st.session_state.chat_messages.append({"role": "user", "content": user_prompt})
+            with st.chat_message("user"):
+                st.write(user_prompt)
+
+            # Rule/Keyword Parsing from Chat Stream
+            is_critical = "cannot work" in user_prompt.lower() or "urgent" in user_prompt.lower() or "down" in user_prompt.lower()
+            business_critical = "Yes" if is_critical else "No"
+            
+            chat_input_data = pd.DataFrame([{
+                'Ticket_Description': user_prompt,
+                'Department': 'IT' if 'server' in user_prompt.lower() else 'Academic',
+                'Issue_Category': 'Network' if 'vpn' in user_prompt.lower() or 'wifi' in user_prompt.lower() else 'Software',
+                'Device_Type': 'Laptop' if 'laptop' in user_prompt.lower() else 'Desktop',
+                'Business_Critical': business_critical,
+                'Office_Location': 'Colombo' if 'colombo' in user_prompt.lower() else 'Kandy',
+                'Affected_Users': 5 if 'everyone' in user_prompt.lower() else 1,
+                'Impact_Score': 1.5 if is_critical else 0.5
+            }])
+
+            chat_pred = pipeline.predict(chat_input_data)[0]
+            chat_probs = pipeline.predict_proba(chat_input_data)[0]
+            chat_conf = round(float(np.max(chat_probs)) * 100, 1)
+
+            auto_ticket = {
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "User_Email": user_email,
+                "Title": user_prompt[:40] + "...",
+                "Description": user_prompt,
+                "Branch_Location": "Colombo" if "colombo" in user_prompt.lower() else "Kandy",
+                "Department": "Academic",
+                "Issue_Category": "Software",
+                "Device_Type": "Laptop",
+                "Affected_Users": 1,
+                "Business_Critical": business_critical,
+                "Assigned_Priority": chat_pred,
+                "Confidence": f"{chat_conf}%",
+                "Routing_Status": "Recommended (Pending Review)" if chat_conf >= 65 else "Flagged for Manual Triage",
+                "Status": "Pending"
+            }
+
+            db = load_local_database()
+            db.append(auto_ticket)
+            save_to_local_database(db)
+
+            bot_reply = f"✅ **Ticket Logged Successfully!**\n\n- **Assigned Priority:** `{chat_pred}` (Confidence: {chat_conf}%)\n- **Business Critical:** `{business_critical}`\n\nYour ticket has been sent to the IT operations queue."
+            st.session_state.chat_messages.append({"role": "assistant", "content": bot_reply})
+            with st.chat_message("assistant"):
+                st.write(bot_reply)
+
+    # TAB 3: USER TICKET REGISTRY VIEW
+    with tab3:
         render_user_tickets()
