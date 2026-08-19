@@ -363,7 +363,6 @@ else:
 
         pipeline = load_pipeline()
 
-        # Dynamic form key resets inputs whenever form_generation_id changes
         with st.form(key=f"prediction_form_{st.session_state.form_generation_id}"):
             ticket_title = st.text_input("Ticket Title / Summary", placeholder="e.g., Unable to access examination portal")
             ticket_desc = st.text_area("Detailed Issue Description", placeholder="Describe what happened, error messages, and impact...")
@@ -403,7 +402,7 @@ else:
                 confidence = round(float(np.max(probs)) * 100, 1)
 
                 if confidence >= 85:
-                    routing_status = "Auto-Assigned"
+                    routing_status = "Recommended (Pending Review)"
                 elif confidence >= 65:
                     routing_status = "Recommended (Pending Review)"
                 else:
@@ -430,12 +429,23 @@ else:
                 current_tickets.append(new_ticket_entry)
                 save_to_local_database(current_tickets)
 
-                # Reset form fields for the next submission
+                # Persist prediction details across reruns
+                st.session_state.last_prediction = {
+                    "priority": prediction,
+                    "confidence": confidence,
+                    "routing": routing_status
+                }
+
+                # Reset inputs for next ticket
                 st.session_state.form_generation_id += 1
-                
-                # Show toast message and refresh view
-                st.toast(f"✅ Ticket '{ticket_title}' successfully logged! Priority: {prediction}", icon="🎟️")
                 st.rerun()
+
+        # Display result card after page refresh
+        if 'last_prediction' in st.session_state:
+            res = st.session_state.last_prediction
+            st.markdown(f"### Predicted Priority: **{res['priority']}** *(Confidence: {res['confidence']}%)*")
+            st.info(f"**System Routing Action:** {res['routing']}")
+            st.success("Ticket successfully logged!")
 
     with tab2:
         render_user_tickets()
