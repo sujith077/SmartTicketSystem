@@ -75,9 +75,9 @@ if st.sidebar.button("🚪 Log Out", use_container_width=True):
     st.rerun()
 
 # --- AUTO-REFRESHING ADMIN DASHBOARD ---
-@st.fragment(run_every="5s")  # Auto-refreshes this section every 5 seconds automatically
+@st.fragment(run_every="5s")
 def render_admin_dashboard():
-    # Reload database from disk on each 5-second interval
+    # Always read fresh state from file
     ticket_database = load_local_database()
     st.session_state.ticket_database = ticket_database
 
@@ -109,13 +109,16 @@ def render_admin_dashboard():
         st.subheader("⚙️ Quick Action Console")
         st.caption("Select a ticket below to update its Status or override its Assigned Priority.")
         
-        admin_df['ID'] = [f"TICK-{i+1:03d}" for i in admin_df.index]
+        # Display 1-based Ticket IDs (e.g. 1, 2, 3...)
+        admin_df['Ticket_ID'] = [i + 1 for i in range(len(admin_df))]
         
         c1, c2, c3, c4 = st.columns([1, 2, 2, 1])
         with c1:
-            selected_id = st.selectbox("Ticket ID", options=admin_df['ID'].tolist())
+            selected_display_id = st.selectbox("Ticket ID", options=admin_df['Ticket_ID'].tolist())
         
-        target_ticket = admin_df[admin_df['ID'] == selected_id].iloc[0]
+        # Convert selected display ID back to integer list index (0-based)
+        list_index = int(selected_display_id) - 1
+        target_ticket = ticket_database[list_index]
         
         with c2:
             new_status = st.selectbox(
@@ -133,25 +136,31 @@ def render_admin_dashboard():
             st.write(" ")
             st.write(" ")
             if st.button("💾 Save Update", use_container_width=True):
-                st.session_state.ticket_database[selected_id]['Status'] = new_status
-                st.session_state.ticket_database[selected_id]['Assigned_Priority'] = new_priority
-                save_to_local_database(st.session_state.ticket_database)
-                st.toast(f"Ticket #{selected_id} updated successfully!", icon="✅")
+                # Update underlying database array
+                ticket_database[list_index]['Status'] = new_status
+                ticket_database[list_index]['Assigned_Priority'] = new_priority
+                save_to_local_database(ticket_database)
+                st.session_state.ticket_database = ticket_database
+                st.toast(f"Ticket #{selected_display_id} updated successfully!", icon="✅")
                 st.rerun()
 
         st.markdown("---")
         st.subheader("📋 Active Operations Queue")
         st.caption("🎨 **Color Key:** 🟡 Yellow = Pending | 🔵 Blue = Processing | 🟢 Green = Completed")
 
-        display_cols = ["ID", "Timestamp", "Title", "Assigned_Priority", "Status", "Routing_Status", "User_Email"]
-        clean_df = admin_df[display_cols].copy()
+        # Prepare clean display DataFrame
+        clean_df = admin_df.copy()
         clean_df.rename(columns={
+            "Ticket_ID": "ID",
             "Timestamp": "Date & Time",
             "Title": "Ticket Title",
             "Assigned_Priority": "Priority",
             "Routing_Status": "Action Flag",
             "User_Email": "User"
         }, inplace=True)
+
+        display_cols = ["ID", "Date & Time", "Ticket Title", "Priority", "Status", "Action Flag", "User"]
+        clean_df = clean_df[display_cols]
 
         def highlight_status(row):
             status = row['Status']
@@ -338,7 +347,6 @@ else:
                     "Status": "Pending"
                 }
 
-                # Load latest tickets directly to avoid race conditions
                 current_tickets = load_local_database()
                 current_tickets.append(new_ticket_entry)
                 save_to_local_database(current_tickets)
