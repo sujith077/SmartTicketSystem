@@ -33,7 +33,6 @@ def load_session():
         try:
             with open(SESSION_FILE, "r") as f:
                 data = json.load(f)
-                # Check if session is still within the 10-minute window
                 if time.time() - data.get("last_active", 0) < SESSION_TIMEOUT_SECONDS:
                     return data.get("user"), data.get("role")
         except:
@@ -72,7 +71,6 @@ if 'logged_in_user' not in st.session_state:
 if 'user_role' not in st.session_state:
     st.session_state.user_role = saved_role
 
-# Refresh activity timestamp if user is logged in
 if st.session_state.logged_in_user:
     save_session(st.session_state.logged_in_user, st.session_state.user_role)
 
@@ -240,7 +238,6 @@ def render_user_tickets():
             }
             user_df.rename(columns=rename_map, inplace=True)
 
-            # Essential user-facing columns only
             display_cols = ["ID", "Date & Time", "Ticket Title", "Priority", "Status", "Action Flag"]
             valid_cols = [col for col in display_cols if col in user_df.columns]
             clean_user_df = user_df[valid_cols]
@@ -366,6 +363,7 @@ else:
 
         pipeline = load_pipeline()
 
+        # Dynamic form key resets inputs whenever form_generation_id changes
         with st.form(key=f"prediction_form_{st.session_state.form_generation_id}"):
             ticket_title = st.text_input("Ticket Title / Summary", placeholder="e.g., Unable to access examination portal")
             ticket_desc = st.text_area("Detailed Issue Description", placeholder="Describe what happened, error messages, and impact...")
@@ -411,9 +409,6 @@ else:
                 else:
                     routing_status = "Flagged for Manual Triage"
 
-                st.markdown(f"### Predicted Priority: **{prediction}** *(Confidence: {confidence}%)*")
-                st.info(f"**System Routing Action:** {routing_status}")
-
                 new_ticket_entry = {
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "User_Email": user_email,
@@ -434,7 +429,13 @@ else:
                 current_tickets = load_local_database()
                 current_tickets.append(new_ticket_entry)
                 save_to_local_database(current_tickets)
-                st.success("Ticket successfully logged!")
+
+                # Reset form fields for the next submission
+                st.session_state.form_generation_id += 1
+                
+                # Show toast message and refresh view
+                st.toast(f"✅ Ticket '{ticket_title}' successfully logged! Priority: {prediction}", icon="🎟️")
+                st.rerun()
 
     with tab2:
         render_user_tickets()
