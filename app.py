@@ -5,7 +5,7 @@ import json
 import os
 import time
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Page configuration
 st.set_page_config(page_title="NCHS IT Ticket System", page_icon="🎫", layout="wide")
@@ -53,6 +53,20 @@ def clear_session():
             os.remove(SESSION_FILE)
         except:
             pass
+
+def filter_last_3_months(tickets_list):
+    """Filters a list of ticket dicts to only include those created within the last 90 days."""
+    cutoff_date = datetime.now() - timedelta(days=90)
+    filtered = []
+    for ticket in tickets_list:
+        try:
+            ticket_time = datetime.strptime(ticket["Timestamp"], "%Y-%m-%d %H:%M:%S")
+            if ticket_time >= cutoff_date:
+                filtered.append(ticket)
+        except (KeyError, ValueError):
+            # Include ticket if date format is invalid or unparseable to prevent accidental loss
+            filtered.append(ticket)
+    return filtered
 
 if 'form_generation_id' not in st.session_state:
     st.session_state.form_generation_id = 0
@@ -115,18 +129,19 @@ if st.sidebar.button("🚪 Log Out", use_container_width=True):
 # --- AUTO-REFRESHING ADMIN DASHBOARD ---
 @st.fragment(run_every="5s")
 def render_admin_dashboard():
-    ticket_database = load_local_database()
+    full_database = load_local_database()
+    ticket_database = filter_last_3_months(full_database)
     st.session_state.ticket_database = ticket_database
 
     st.title("👨‍💻 NCHS IT System Administrator Portal")
-    st.caption("🔄 **Live Feed:** Dashboard automatically synchronizes new tickets every 5 seconds.")
+    st.caption("🔄 **Live Feed:** Displaying tickets from the **last 3 months** (Syncs every 5s).")
     st.markdown("---")
     
     if len(ticket_database) > 0:
         admin_df = pd.DataFrame(ticket_database)
         
         # Operational Metrics
-        st.subheader("📊 Operational Summary")
+        st.subheader("📊 Operational Summary (Past 3 Months)")
         kcol1, kcol2, kcol3, kcol4 = st.columns(4)
         with kcol1:
             st.metric(label="Total Tickets", value=len(admin_df))
@@ -171,10 +186,14 @@ def render_admin_dashboard():
             st.write(" ")
             st.write(" ")
             if st.button("💾 Save Update", use_container_width=True):
-                ticket_database[list_index]['Status'] = new_status
-                ticket_database[list_index]['Assigned_Priority'] = new_priority
-                save_to_local_database(ticket_database)
-                st.session_state.ticket_database = ticket_database
+                # Update status in original full database array matching unique timestamp and email
+                for ticket in full_database:
+                    if (ticket.get("Timestamp") == target_ticket.get("Timestamp") and 
+                        ticket.get("User_Email") == target_ticket.get("User_Email")):
+                        ticket['Status'] = new_status
+                        ticket['Assigned_Priority'] = new_priority
+                        break
+                save_to_local_database(full_database)
                 st.toast(f"Ticket #{selected_display_id} updated successfully!", icon="✅")
                 st.rerun()
 
@@ -214,15 +233,15 @@ def render_admin_dashboard():
         )
 
     else:
-        st.info("No tickets have been submitted yet. Awaiting live incoming submissions...")
+        st.info("No tickets recorded within the last 3 months.")
 
 # --- AUTO-REFRESHING USER TICKET REGISTRY ---
 @st.fragment(run_every="5s")
 def render_user_tickets():
-    st.subheader("📋 My Support Tickets Registry")
+    st.subheader("📋 My Support Tickets Registry (Last 3 Months)")
     st.caption("🎨 **Color Key:** 🟡 Yellow = Pending | 🔵 Blue = Processing | 🟢 Green = Completed | 🔄 Live Sync Every 5s")
     
-    db = load_local_database()
+    db = filter_last_3_months(load_local_database())
     if len(db) > 0:
         full_df = pd.DataFrame(db)
         user_df = full_df[full_df['User_Email'] == user_email].copy()
@@ -260,9 +279,9 @@ def render_user_tickets():
                 hide_index=True
             )
         else:
-            st.info("No tickets logged yet.")
+            st.info("No tickets logged in the last 3 months.")
     else:
-        st.info("No tickets logged yet.")
+        st.info("No tickets logged in the last 3 months.")
 
 if is_admin:
     render_admin_dashboard()
@@ -436,11 +455,11 @@ else:
                     "routing": routing_status
                 }
 
-                # Reset inputs for next ticket
+                # Reset form inputs for next ticket
                 st.session_state.form_generation_id += 1
                 st.rerun()
 
-        # Display result card after page refresh
+        # Display result card after refresh
         if 'last_prediction' in st.session_state:
             res = st.session_state.last_prediction
             st.markdown(f"### Predicted Priority: **{res['priority']}** *(Confidence: {res['confidence']}%)*")
