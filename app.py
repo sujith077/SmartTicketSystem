@@ -6,7 +6,8 @@ import os
 import numpy as np
 from datetime import datetime
 
-st.set_page_config(page_title="NCHS IT Ticket System", page_icon="🎫", layout="centered")
+# Use wide mode for a spacious, professional dashboard layout
+st.set_page_config(page_title="NCHS IT Ticket System", page_icon="🎫", layout="wide")
 
 # --- DATABASE INTEGRATION ---
 DB_FILE = "tickets.json"
@@ -41,84 +42,127 @@ if 'logged_in_user' not in st.session_state:
 if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
+# --- LOGIN GATEWAY ---
 if st.session_state.logged_in_user is None:
-    st.title("🎫 Secure IT Support Gateway")
-    st.write("Please log in using your authorized corporate credentials.")
-    
-    with st.form("login_gateway"):
-        username_input = st.text_input("Username / Email Address", placeholder="e.g., sujith.b@nchs.edu.lk")
-        password_input = st.text_input("Password", type="password", placeholder="••••••••")
-        login_submit = st.form_submit_button("Access Portal")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.title("🎫 Secure IT Support Gateway")
+        st.write("Please log in using your authorized corporate credentials.")
         
-        if login_submit:
-            clean_user = username_input.strip().lower()
-            if clean_user in AUTHORIZED_USERS and AUTHORIZED_USERS[clean_user] == password_input:
-                st.session_state.logged_in_user = clean_user
-                st.session_state.user_role = "Admin" if clean_user == "itsupport@nchs.edu.lk" else "User"
-                st.rerun()
-            else:
-                st.error("❌ Access Denied: Invalid username or incorrect password.")
+        with st.form("login_gateway"):
+            username_input = st.text_input("Username / Email Address", placeholder="e.g., sujith.b@nchs.edu.lk")
+            password_input = st.text_input("Password", type="password", placeholder="••••••••")
+            login_submit = st.form_submit_button("Access Portal", use_container_width=True)
+            
+            if login_submit:
+                clean_user = username_input.strip().lower()
+                if clean_user in AUTHORIZED_USERS and AUTHORIZED_USERS[clean_user] == password_input:
+                    st.session_state.logged_in_user = clean_user
+                    st.session_state.user_role = "Admin" if clean_user == "itsupport@nchs.edu.lk" else "User"
+                    st.rerun()
+                else:
+                    st.error("❌ Access Denied: Invalid username or incorrect password.")
     st.stop()
 
 user_email = st.session_state.logged_in_user
 is_admin = (st.session_state.user_role == "Admin")
 
-if is_admin:
-    st.markdown("<h1 style='text-align: center;'>👨‍💻 NCHS IT System Administrator Portal</h1>", unsafe_allow_html=True)
-else:
-    st.markdown("<h1 style='text-align: center;'>🎫 NCHS IT Support Ticket Priority Predictor</h1>", unsafe_allow_html=True)
-
-st.sidebar.markdown(f"**Logged in as:**\n`{user_email}`")
-st.sidebar.markdown(f"**Role:** {st.session_state.user_role}")
-if st.sidebar.button("Log Out"):
+# Sidebar navigation
+st.sidebar.markdown(f"### 👤 User Info")
+st.sidebar.markdown(f"**Email:** `{user_email}`")
+st.sidebar.markdown(f"**Role:** `{st.session_state.user_role}`")
+st.sidebar.markdown("---")
+if st.sidebar.button("🚪 Log Out", use_container_width=True):
     st.session_state.logged_in_user = None
     st.session_state.user_role = None
     st.rerun()
 
-# --- ADMIN PANEL ---
+# --- ADMIN DASHBOARD ---
 if is_admin:
-    st.write("Welcome to the control console. Below is the live queue where you can review issues and change tracking statuses.")
+    st.title("👨‍💻 NCHS IT System Administrator Portal")
+    st.write("Manage active IT requests, review triage alerts, and track system analytics.")
     st.markdown("---")
     
     if len(st.session_state.ticket_database) > 0:
         admin_df = pd.DataFrame(st.session_state.ticket_database)
         
-        st.subheader("📊 System Performance Metrics & Charts")
-        kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
-        with kpi_col1:
+        # Summary Metrics Row
+        st.subheader("📊 Key Metrics")
+        kcol1, kcol2, kcol3, kcol4 = st.columns(4)
+        with kcol1:
             st.metric(label="Total Tickets Logged", value=len(admin_df))
-        with kpi_col2:
+        with kcol2:
+            pending_count = len(admin_df[admin_df['Status'] == 'Pending'])
+            st.metric(label="⏳ Pending Action", value=pending_count)
+        with kcol3:
             critical_count = len(admin_df[admin_df['Assigned_Priority'] == 'Critical'])
             st.metric(label="🚨 Critical Escalations", value=critical_count)
-        with kpi_col3:
-            avg_impact = round(admin_df['Affected_Users'].mean(), 1)
-            st.metric(label="👥 Avg. Impact Radius", value=f"{avg_impact} Users")
+        with kcol4:
+            triage_count = len(admin_df[admin_df['Routing_Status'].str.contains('Manual Triage', na=False)])
+            st.metric(label="⚠️ Manual Triage Flags", value=triage_count)
             
+        st.markdown("---")
+        
+        # Visual Charts
+        st.subheader("📈 Queue Analytics")
         chart_col1, chart_col2 = st.columns(2)
         with chart_col1:
-            st.markdown("**Tickets Grouped by Priority**")
+            st.markdown("**Tickets by Priority**")
             priority_counts = admin_df['Assigned_Priority'].value_counts()
             order = ['Critical', 'High', 'Medium', 'Low']
             priority_counts = priority_counts.reindex([p for p in order if p in priority_counts.index])
             st.bar_chart(priority_counts)
         with chart_col2:
-            st.markdown("**Ticket Breakdown by Branch Location**")
+            st.markdown("**Tickets by Branch Location**")
             branch_counts = admin_df['Branch_Location'].value_counts()
             st.bar_chart(branch_counts)
             
         st.markdown("---")
-        st.subheader("📋 Active Operations Data Queue")
         
+        # Interactive Table for Triage and Status Updates
+        st.subheader("📋 Active Operations & Triage Queue")
+        st.caption("💡 Admins can update ticket **Status** and override **Assigned Priority** directly in the table below.")
+        
+        # Reorder columns for optimal viewing
+        column_order = [
+            "Timestamp", "Title", "Assigned_Priority", "Status", "Routing_Status", 
+            "Confidence", "User_Email", "Branch_Location", "Department", "Issue_Category", 
+            "Device_Type", "Affected_Users", "Business_Critical", "Description"
+        ]
+        
+        # Ensure all columns exist
+        available_cols = [col for col in column_order if col in admin_df.columns]
+        admin_df = admin_df[available_cols]
+
         edited_df = st.data_editor(
             admin_df,
             column_config={
+                "Timestamp": st.column_config.TextColumn("Date & Time", disabled=True, width="medium"),
+                "Title": st.column_config.TextColumn("Ticket Title", disabled=True, width="large"),
+                "Assigned_Priority": st.column_config.SelectboxColumn(
+                    "Priority",
+                    options=["Critical", "High", "Medium", "Low"],
+                    required=True,
+                    width="small"
+                ),
                 "Status": st.column_config.SelectboxColumn(
                     "Status",
                     options=["Pending", "Processing", "Completed"],
                     required=True,
-                )
+                    width="small"
+                ),
+                "Routing_Status": st.column_config.TextColumn("Routing Action", disabled=True, width="medium"),
+                "Confidence": st.column_config.TextColumn("ML Conf.", disabled=True, width="small"),
+                "User_Email": st.column_config.TextColumn("User", disabled=True, width="medium"),
+                "Branch_Location": st.column_config.TextColumn("Branch", disabled=True, width="small"),
+                "Department": st.column_config.TextColumn("Dept", disabled=True, width="small"),
+                "Issue_Category": st.column_config.TextColumn("Category", disabled=True, width="small"),
+                "Device_Type": st.column_config.TextColumn("Device", disabled=True, width="small"),
+                "Affected_Users": st.column_config.NumberColumn("Users", disabled=True, width="small"),
+                "Business_Critical": st.column_config.TextColumn("Critical Work", disabled=True, width="small"),
+                "Description": st.column_config.TextColumn("Description", disabled=True, width="large")
             },
-            disabled=[col for col in admin_df.columns if col != "Status"],
+            hide_index=True,
             use_container_width=True
         )
         
@@ -127,13 +171,19 @@ if is_admin:
             save_to_local_database(st.session_state.ticket_database)
             st.toast("System updated successfully!", icon="💾")
             st.rerun()
+    else:
+        st.info("No tickets have been submitted yet.")
 
 # --- USER PANEL ---
 else:
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.title("🎫 NCHS IT Support Ticket Portal")
+    
     tab1, tab2 = st.tabs(["🆕 Raise New IT Ticket", "📋 View My Submitted Tickets"])
     
     with tab1:
-        st.write("Submit your technical issue below with a detailed description for automated NLP classification.")
+        st.write("Submit your technical issue below with a detailed description for automated classification.")
         
         @st.cache_resource
         def load_pipeline():
@@ -210,7 +260,6 @@ else:
                 joblib.dump(auto_pipeline, model_path)
                 return auto_pipeline
 
-            # Try loading existing pickle; if missing or incompatible, train natively on server
             if os.path.exists(model_path):
                 try:
                     return joblib.load(model_path)
@@ -255,12 +304,10 @@ else:
                     'Impact_Score': impact_score
                 }])
 
-                # Run ML Prediction
                 prediction = pipeline.predict(input_data)[0]
                 probs = pipeline.predict_proba(input_data)[0]
                 confidence = round(float(np.max(probs)) * 100, 1)
 
-                # Confidence Routing Logic
                 if confidence >= 85:
                     routing_status = "Auto-Assigned"
                 elif confidence >= 65:
