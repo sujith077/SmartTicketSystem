@@ -77,7 +77,6 @@ if st.sidebar.button("🚪 Log Out", use_container_width=True):
 # --- AUTO-REFRESHING ADMIN DASHBOARD ---
 @st.fragment(run_every="5s")
 def render_admin_dashboard():
-    # Always read fresh state from file
     ticket_database = load_local_database()
     st.session_state.ticket_database = ticket_database
 
@@ -109,14 +108,12 @@ def render_admin_dashboard():
         st.subheader("⚙️ Quick Action Console")
         st.caption("Select a ticket below to update its Status or override its Assigned Priority.")
         
-        # Display 1-based Ticket IDs (e.g. 1, 2, 3...)
         admin_df['Ticket_ID'] = [i + 1 for i in range(len(admin_df))]
         
         c1, c2, c3, c4 = st.columns([1, 2, 2, 1])
         with c1:
             selected_display_id = st.selectbox("Ticket ID", options=admin_df['Ticket_ID'].tolist())
         
-        # Convert selected display ID back to integer list index (0-based)
         list_index = int(selected_display_id) - 1
         target_ticket = ticket_database[list_index]
         
@@ -136,7 +133,6 @@ def render_admin_dashboard():
             st.write(" ")
             st.write(" ")
             if st.button("💾 Save Update", use_container_width=True):
-                # Update underlying database array
                 ticket_database[list_index]['Status'] = new_status
                 ticket_database[list_index]['Assigned_Priority'] = new_priority
                 save_to_local_database(ticket_database)
@@ -148,7 +144,6 @@ def render_admin_dashboard():
         st.subheader("📋 Active Operations Queue")
         st.caption("🎨 **Color Key:** 🟡 Yellow = Pending | 🔵 Blue = Processing | 🟢 Green = Completed")
 
-        # Prepare clean display DataFrame
         clean_df = admin_df.copy()
         clean_df.rename(columns={
             "Ticket_ID": "ID",
@@ -354,12 +349,41 @@ else:
 
     with tab2:
         st.subheader("📋 My Support Tickets Registry")
+        st.caption("🎨 **Color Key:** 🟡 Yellow = Pending | 🔵 Blue = Processing | 🟢 Green = Completed")
+        
         db = load_local_database()
         if len(db) > 0:
             full_df = pd.DataFrame(db)
-            user_df = full_df[full_df['User_Email'] == user_email]
+            user_df = full_df[full_df['User_Email'] == user_email].copy()
+            
             if not user_df.empty:
-                st.dataframe(user_df, use_container_width=True, hide_index=True)
+                user_df['ID'] = [i + 1 for i in range(len(user_df))]
+                
+                rename_map = {
+                    "Timestamp": "Date & Time",
+                    "Title": "Ticket Title",
+                    "Assigned_Priority": "Priority",
+                    "Routing_Status": "Action Flag"
+                }
+                user_df.rename(columns=rename_map, inplace=True)
+
+                def highlight_user_status(row):
+                    status = row.get('Status', '')
+                    if status == 'Pending':
+                        return ['background-color: #fff9c4; color: #574500; font-weight: 500;'] * len(row)
+                    elif status == 'Processing':
+                        return ['background-color: #e3f2fd; color: #0d47a1; font-weight: 500;'] * len(row)
+                    elif status == 'Completed':
+                        return ['background-color: #e8f5e9; color: #1b5e20; font-weight: 500;'] * len(row)
+                    return [''] * len(row)
+
+                styled_user_df = user_df.style.apply(highlight_user_status, axis=1)
+
+                st.dataframe(
+                    styled_user_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
             else:
                 st.info("No tickets logged yet.")
         else:
