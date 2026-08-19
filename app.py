@@ -218,7 +218,7 @@ def render_admin_dashboard():
 
         st.markdown("---")
         st.subheader("📋 Active Operations Queue")
-        st.caption("🎨 **Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Completed")
+        st.caption("**Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Completed")
 
         clean_df = admin_df.copy()
         clean_df.rename(columns={
