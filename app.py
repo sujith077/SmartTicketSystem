@@ -137,13 +137,80 @@ else:
         
         @st.cache_resource
         def load_pipeline():
-            return joblib.load('priority_pipeline.pkl')
+            model_path = 'priority_pipeline.pkl'
+            if not os.path.exists(model_path):
+                from sklearn.model_selection import train_test_split
+                from sklearn.preprocessing import OneHotEncoder, StandardScaler
+                from sklearn.feature_extraction.text import TfidfVectorizer
+                from sklearn.compose import ColumnTransformer
+                from sklearn.pipeline import Pipeline
+                from sklearn.ensemble import RandomForestClassifier
 
-        try:
-            pipeline = load_pipeline()
-        except:
-            st.warning("⚠️ Pipeline model file 'priority_pipeline.pkl' not found. Please train and save the model first.")
-            st.stop()
+                np.random.seed(42)
+                departments = ['HR', 'Finance', 'IT', 'Sales', 'Marketing', 'Operations']
+                categories = ['Software', 'Hardware', 'Network', 'Access/Login', 'Security']
+                devices = ['Laptop', 'Desktop', 'Mobile', 'Printer', 'Server', 'None']
+                locations = ['Kandy', 'Colombo']
+                sample_titles = {
+                    'Security': ['Server firewall failure', 'Phishing email reported', 'Unauthorized access attempt'],
+                    'Network': ['VPN connection dropping', 'Wi-Fi slow in Colombo branch', 'Switch port down'],
+                    'Software': ['ERP application crash', 'Excel formula error', 'Software license expired'],
+                    'Hardware': ['Monitor flickering', 'Printer jam in accounting', 'Laptop battery dying'],
+                    'Access/Login': ['Password reset required', 'Account locked out', 'MFA token not received']
+                }
+                data = []
+                for _ in range(2500):
+                    cat = np.random.choice(categories)
+                    title = np.random.choice(sample_titles[cat])
+                    dept = np.random.choice(departments)
+                    dev = np.random.choice(devices)
+                    loc = np.random.choice(locations)
+                    users = np.random.randint(1, 50)
+                    crit = np.random.choice(['Yes', 'No'], p=[0.2, 0.8])
+                    desc = f"{title} reported in {dept} department at {loc} office affecting {users} users."
+                    data.append({
+                        'Ticket_Title': title, 'Ticket_Description': desc, 'Department': dept,
+                        'Issue_Category': cat, 'Device_Type': dev, 'Affected_Users': users,
+                        'Business_Critical': crit, 'Office_Location': loc
+                    })
+                df = pd.DataFrame(data)
+                def assign_priority(row):
+                    if row['Issue_Category'] == 'Security' and row['Device_Type'] == 'Server':
+                        return 'Critical' if (row['Affected_Users'] > 10 or row['Business_Critical'] == 'Yes') else 'High'
+                    score = 0
+                    if row['Business_Critical'] == 'Yes': score += 4
+                    if row['Affected_Users'] > 20: score += 3
+                    elif row['Affected_Users'] > 5: score += 1
+                    if row['Issue_Category'] in ['Network', 'Security']: score += 2
+                    score += np.random.randint(-1, 2)
+                    if score >= 6: return 'Critical'
+                    elif score >= 4: return 'High'
+                    elif score >= 2: return 'Medium'
+                    else: return 'Low'
+                df['Priority'] = df.apply(assign_priority, axis=1)
+                df['Impact_Score'] = df['Affected_Users'] * df['Business_Critical'].map({'Yes': 1.5, 'No': 0.5})
+
+                categorical_cols = ['Department', 'Issue_Category', 'Device_Type', 'Business_Critical', 'Office_Location']
+                numerical_cols = ['Affected_Users', 'Impact_Score']
+                preprocessor = ColumnTransformer(
+                    transformers=[
+                        ('text', TfidfVectorizer(max_features=50, stop_words='english'), 'Ticket_Description'),
+                        ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_cols),
+                        ('num', StandardScaler(), numerical_cols)
+                    ]
+                )
+                X = df[['Ticket_Description', 'Department', 'Issue_Category', 'Device_Type', 'Business_Critical', 'Office_Location', 'Affected_Users', 'Impact_Score']]
+                y = df['Priority']
+                auto_pipeline = Pipeline([
+                    ('preprocessor', preprocessor),
+                    ('classifier', RandomForestClassifier(n_estimators=200, max_depth=10, class_weight='balanced', random_state=42))
+                ])
+                auto_pipeline.fit(X, y)
+                joblib.dump(auto_pipeline, model_path)
+
+            return joblib.load(model_path)
+
+        pipeline = load_pipeline()
 
         with st.form(key=f"prediction_form_{st.session_state.form_generation_id}"):
             ticket_title = st.text_input("Ticket Title / Summary", placeholder="e.g., Unable to access examination portal")
