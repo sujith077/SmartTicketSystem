@@ -5,6 +5,7 @@ import json
 import os
 import time
 import numpy as np
+import hashlib
 from datetime import datetime, timedelta
 
 # Page configuration
@@ -12,8 +13,37 @@ st.set_page_config(page_title="NCHS IT Ticket System", page_icon="🎫", layout=
 
 # --- DATABASE & SESSION CONFIGURATION ---
 DB_FILE = "tickets.json"
+USERS_FILE = "users.json"
 SESSION_FILE = "user_session.json"
 SESSION_TIMEOUT_SECONDS = 600  # 10 minutes session inactivity timeout
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r") as f:
+                return json.load(f)
+        except:
+            pass
+    # Seed default initial admin user if users.json does not exist
+    default_users = {
+        "itsupport@nchs.edu.lk": {
+            "password": hash_password("admin@123"),
+            "role": "Admin"
+        },
+        "sujith.b@nchs.edu.lk": {
+            "password": hash_password("user@123"),
+            "role": "User"
+        }
+    }
+    save_users(default_users)
+    return default_users
+
+def save_users(users_dict):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users_dict, f, indent=4)
 
 def load_local_database():
     if os.path.exists(DB_FILE):
@@ -70,12 +100,6 @@ def filter_last_3_months(tickets_list):
 if 'form_generation_id' not in st.session_state:
     st.session_state.form_generation_id = 0
 
-AUTHORIZED_USERS = {
-    "itsupport@nchs.edu.lk": "admin@123",
-    "sujith.b@nchs.edu.lk": "user@123",
-    "ayesha.k@nchs.edu.lk": "user@456"
-}
-
 # --- INITIALIZE SESSION FROM STORAGE ---
 saved_user, saved_role = load_session()
 
@@ -92,7 +116,7 @@ if st.session_state.logged_in_user is None:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🎫 Secure IT Support Gateway")
-        st.write("Please log in using your authorized corporate credentials.")
+        st.write("Please log in using your corporate credentials.")
         
         with st.form("login_gateway"):
             username_input = st.text_input("Username / Email Address", placeholder="e.g., sujith.b@nchs.edu.lk")
@@ -101,8 +125,11 @@ if st.session_state.logged_in_user is None:
             
             if login_submit:
                 clean_user = username_input.strip().lower()
-                if clean_user in AUTHORIZED_USERS and AUTHORIZED_USERS[clean_user] == password_input:
-                    role = "Admin" if clean_user == "itsupport@nchs.edu.lk" else "User"
+                hashed_input = hash_password(password_input)
+                users_db = load_users()
+                
+                if clean_user in users_db and users_db[clean_user]["password"] == hashed_input:
+                    role = users_db[clean_user]["role"]
                     st.session_state.logged_in_user = clean_user
                     st.session_state.user_role = role
                     save_session(clean_user, role)
@@ -242,10 +269,52 @@ def render_admin_dashboard():
     st.caption("🔄 **Live Feed:** Displaying tickets from the **last 3 months** (Syncs every 5s).")
     st.markdown("---")
     
+    # ---------------- ADMIN USER REGISTRATION MODULE ----------------
+    with st.expander("👥 User Management & Account Provisioning", expanded=False):
+        st.subheader("➕ Register New Corporate User")
+        st.caption("Provision new system accounts securely. Registered credentials will immediately persist to `users.json`.")
+        
+        with st.form("admin_register_user_form"):
+            reg_col1, reg_col2, reg_col3 = st.columns([2, 2, 1])
+            with reg_col1:
+                new_email = st.text_input("User Email Address", placeholder="e.g., user@nchs.edu.lk")
+            with reg_col2:
+                new_password = st.text_input("Initial Password", type="password", placeholder="••••••••")
+            with reg_col3:
+                new_role = st.selectbox("Assigned Role", ["User", "Admin"])
+                
+            register_submit = st.form_submit_button("Create User Account", use_container_width=True)
+            
+            if register_submit:
+                clean_email = new_email.strip().lower()
+                current_users = load_users()
+                
+                if not clean_email or not new_password:
+                    st.error("⚠️ Please fill in all required fields.")
+                elif clean_email in current_users:
+                    st.error(f"⚠️ User account `{clean_email}` already exists.")
+                else:
+                    current_users[clean_email] = {
+                        "password": hash_password(new_password),
+                        "role": new_role
+                    }
+                    save_users(current_users)
+                    st.success(f"✅ User `{clean_email}` registered successfully with role **{new_role}**!")
+                    st.rerun()
+
+        st.markdown("---")
+        st.write("#### 📜 Registered System Accounts")
+        users_list = []
+        for email, info in load_users().items():
+            users_list.append({"Email": email, "Role": info["Role"]})
+        st.dataframe(pd.DataFrame(users_list), use_container_width=True, hide_index=True)
+    # -----------------------------------------------------------------
+
+    st.markdown("---")
+
     if len(ticket_database) > 0:
         admin_df = pd.DataFrame(ticket_database)
         
-        # Operational Metrics
         st.subheader("📊 Operational Summary (Past 3 Months)")
         kcol1, kcol2, kcol3, kcol4 = st.columns(4)
         with kcol1:
@@ -262,7 +331,6 @@ def render_admin_dashboard():
             
         st.markdown("---")
         
-        # Quick Action Console
         st.subheader("⚙️ Quick Action Console")
         st.caption("Select a ticket below to update its Status or override its Assigned Priority.")
         
@@ -303,7 +371,7 @@ def render_admin_dashboard():
 
         st.markdown("---")
         st.subheader("📋 Active Operations Queue")
-        st.caption("🎨 **Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Green = Completed")
+        st.caption("🎨 **Priority Key:** 🔴 Critical | 🟠 High | 🟢 Medium | 🟣 Low  ||  **Status Key:** 🟡 Pending | 🔵 Processing | 🟢 Completed")
 
         clean_df = admin_df.copy()
         clean_df.rename(columns={
@@ -465,7 +533,7 @@ else:
             st.info(f"**System Routing Action:** {res['routing']}")
             st.success("Ticket successfully logged!")
 
-    # TAB 2: AI CHATBOT INTERFACE (FIXED LAYOUT)
+    # TAB 2: AI CHATBOT INTERFACE
     with tab2:
         st.subheader("💬 AI Conversational Assistant")
         st.caption("🤖 Describe your issue naturally. The assistant will parse your query, run ML triage, and log your ticket directly.")
@@ -475,16 +543,15 @@ else:
                 {"role": "assistant", "content": "👋 Hi! Tell me about the IT issue you're experiencing. (e.g., *'My laptop cannot connect to the VPN in Colombo branch and I cannot work'*)"}
             ]
 
-        # 1. Render all current conversation messages
+        # Render current message stream
         for msg in st.session_state.chat_messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
-        # 2. Render input box always at the bottom
+        # Chat input container stays pinned to bottom
         if user_prompt := st.chat_input("Type your IT problem here..."):
             st.session_state.chat_messages.append({"role": "user", "content": user_prompt})
 
-            # Rule/Keyword Parsing from Chat Stream
             is_critical = "cannot work" in user_prompt.lower() or "urgent" in user_prompt.lower() or "down" in user_prompt.lower()
             business_critical = "Yes" if is_critical else "No"
             
@@ -527,7 +594,6 @@ else:
             bot_reply = f"✅ **Ticket Logged Successfully!**\n\n- **Assigned Priority:** `{chat_pred}` (Confidence: {chat_conf}%)\n- **Business Critical:** `{business_critical}`\n\nYour ticket has been sent to the IT operations queue."
             st.session_state.chat_messages.append({"role": "assistant", "content": bot_reply})
             
-            # Rerun so new bot response displays in loop above the chat input
             st.rerun()
 
     # TAB 3: USER TICKET REGISTRY VIEW
