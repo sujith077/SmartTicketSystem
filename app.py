@@ -129,7 +129,7 @@ if st.session_state.logged_in_user is None:
                 users_db = load_users()
                 
                 if clean_user in users_db and users_db[clean_user]["password"] == hashed_input:
-                    role = users_db[clean_user]["role"]
+                    role = users_db[clean_user].get("role", "User")
                     st.session_state.logged_in_user = clean_user
                     st.session_state.user_role = role
                     save_session(clean_user, role)
@@ -306,7 +306,7 @@ def render_admin_dashboard():
         st.write("#### 📜 Registered System Accounts")
         users_list = []
         for email, info in load_users().items():
-            users_list.append({"Email": email, "Role": info["Role"]})
+            users_list.append({"Email": email, "Role": info.get("role", "User")})
         st.dataframe(pd.DataFrame(users_list), use_container_width=True, hide_index=True)
     # -----------------------------------------------------------------
 
@@ -470,7 +470,7 @@ else:
 
         if submit:
             if not ticket_title or not ticket_desc or not department or not category or not device or not branch or not impact_choice:
-                st.error("⚠️ Submission Rejected: Please fill in all fields.")
+                st.error("⚠️ Submission Rejected: Please fill in all required fields.")
             else:
                 business_critical = "Yes" if "I cannot work" in impact_choice else "No"
                 impact_score = affected_users * (1.5 if business_critical == "Yes" else 0.5)
