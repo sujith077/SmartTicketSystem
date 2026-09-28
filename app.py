@@ -12,56 +12,63 @@ from datetime import datetime, timedelta
 # Page configuration
 st.set_page_config(page_title="NCHS IT Ticket System", page_icon="🎫", layout="wide")
 
-# --- BACKGROUND CONFIGURATION ---
-def set_background(image_path_or_url, is_url=True):
-    """
-    Sets the background image for the Streamlit app.
-    - If is_url=True, image_path_or_url should be an HTTP/HTTPS link.
-    - If is_url=False, image_path_or_url should be a local file path (e.g., 'background.jpg').
-    """
-    if is_url:
-        bg_css = f'url("{image_path_or_url}")'
-    else:
-        if os.path.exists(image_path_or_url):
-            with open(image_path_or_url, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode()
-            bg_css = f'url("data:image/png;base64,{encoded_string}")'
-        else:
-            return
-
+# --- BACKGROUND IMAGE STYLING ---
+def set_bg_from_url(url):
+    """Sets a background image from a web URL."""
     st.markdown(
         f"""
         <style>
-        /* Target the main app container for background image */
         .stApp {{
-            background-image: {bg_css};
+            background-image: url("{url}");
             background-attachment: fixed;
             background-size: cover;
             background-position: center;
         }}
-
-        /* Semi-transparent backdrop for content readability */
+        /* Semi-transparent overlay on main content card for enhanced text contrast */
         .stMainBlockContainer {{
-            background-color: rgba(255, 255, 255, 0.92);
-            padding: 2.5rem;
+            background-color: rgba(255, 255, 255, 0.90);
+            padding: 2rem;
             border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
             margin-top: 1rem;
-            margin-bottom: 1rem;
-        }}
-
-        /* Optional translucent sidebar tweak */
-        [data-testid="stSidebar"] {{
-            background-color: rgba(248, 249, 250, 0.92);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }}
         </style>
         """,
         unsafe_allow_html=True
     )
 
-# Set background (Default example using a royalty-free technology background)
-# To use a local image instead, replace with: set_background("your_image.jpg", is_url=False)
-set_background("https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1920&q=80", is_url=True)
+def set_bg_from_local(image_file):
+    """Sets a background image from a local file path."""
+    if os.path.exists(image_file):
+        with open(image_file, "rb") as image:
+            encoded_string = base64.b64encode(image.read()).decode()
+        st.markdown(
+            f"""
+            <style>
+            .stApp {{
+                background-image: url("data:image/png;base64,{encoded_string}");
+                background-attachment: fixed;
+                background-size: cover;
+                background-position: center;
+            }}
+            /* Semi-transparent overlay on main content card for enhanced text contrast */
+            .stMainBlockContainer {{
+                background-color: rgba(255, 255, 255, 0.90);
+                padding: 2rem;
+                border-radius: 12px;
+                margin-top: 1rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
+# OPTION 1: Set via URL (active by default)
+set_bg_from_url("https://images.unsplash.com/photo-1579546929518-9e396f3cc809")
+
+# OPTION 2: Set via Local File (uncomment line below and specify path if using a local file)
+# set_bg_from_local("background.png")
 
 
 # --- DATABASE & SESSION CONFIGURATION ---
@@ -80,6 +87,7 @@ def load_users():
                 return json.load(f)
         except:
             pass
+    # Seed default initial admin user if users.json does not exist
     default_users = {
         "itsupport@nchs.edu.lk": {
             "password": hash_password("admin@123"),
@@ -319,6 +327,49 @@ def render_admin_dashboard():
 
     st.title("👨‍💻 NCHS IT System Administrator Portal")
     st.caption("🔄 **Live Feed:** Displaying tickets from the **last 3 months** (Syncs every 5s).")
+    st.markdown("---")
+    
+    # ---------------- ADMIN USER REGISTRATION MODULE ----------------
+    with st.expander("👥 User Management & Account Provisioning", expanded=False):
+        st.subheader("➕ Register New Corporate User")
+        st.caption("Provision new system accounts securely. Registered credentials will immediately persist to `users.json`.")
+        
+        with st.form("admin_register_user_form"):
+            reg_col1, reg_col2, reg_col3 = st.columns([2, 2, 1])
+            with reg_col1:
+                new_email = st.text_input("User Email Address", placeholder="e.g., user@nchs.edu.lk")
+            with reg_col2:
+                new_password = st.text_input("Initial Password", type="password", placeholder="••••••••")
+            with reg_col3:
+                new_role = st.selectbox("Assigned Role", ["User", "Admin"])
+                
+            register_submit = st.form_submit_button("Create User Account", use_container_width=True)
+            
+            if register_submit:
+                clean_email = new_email.strip().lower()
+                current_users = load_users()
+                
+                if not clean_email or not new_password:
+                    st.error("⚠️ Please fill in all required fields.")
+                elif clean_email in current_users:
+                    st.error(f"⚠️ User account `{clean_email}` already exists.")
+                else:
+                    current_users[clean_email] = {
+                        "password": hash_password(new_password),
+                        "role": new_role
+                    }
+                    save_users(current_users)
+                    st.success(f"✅ User `{clean_email}` registered successfully with role **{new_role}**!")
+                    st.rerun()
+
+        st.markdown("---")
+        st.write("#### 📜 Registered System Accounts")
+        users_list = []
+        for email, info in load_users().items():
+            users_list.append({"Email": email, "Role": info.get("role", "User")})
+        st.dataframe(pd.DataFrame(users_list), use_container_width=True, hide_index=True)
+    # -----------------------------------------------------------------
+
     st.markdown("---")
 
     if len(ticket_database) > 0:
